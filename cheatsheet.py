@@ -47,4 +47,3 @@ def getOhlcv():
   dataFrame = pandas.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
   dataFrame['timestamp'] = pandas.to_datetime(dataFrame['timestamp'], unit='ms')
   print(dataFrame)
-
