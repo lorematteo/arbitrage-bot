@@ -13,3 +13,9 @@ def get_time():
 
     # Retourner la date et l'heure formatées
     return date_heure_format
+
+def moy(list):
+    sum=0
+    for value in list:
+        sum+=value
+    return sum/len(list)

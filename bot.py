@@ -10,14 +10,18 @@ init()
 print('CCXT Version:', ccxt.pro.__version__)
 
 # bot options
-timeout = time.time() + 10
+funds = 500
+timeout = time.time() + 5*60
 min_profit = 0
 min_profit_pct = 0
+delay = 5
 
 # exchanges you want to use to look for arbitrage opportunities
 exchanges = [
-    ccxt.pro.binance(),
-    ccxt.pro.bitmart(),
+    ccxt.pro.binance({
+    }),
+    ccxt.pro.bitmart({
+    }),
 ]
 exchanges_names = ['binance', 'bitmart']
 
@@ -31,11 +35,6 @@ symbols = [
     "SOL/USDT",
 ]
 
-# order sizes for each symbol, adjust it to your liking
-order_sizes = {
-    "SOL/USDT": 0.1,
-}
-
 total_change_usd = 0
 total_change_usd_pct = 0
 prec_ask_price = 0
@@ -43,14 +42,52 @@ prec_bid_price = 0
 opportunity = 0
 prec_seconds = '0000000'
 
-funds = 500
-
 bid_prices = {}
 ask_prices = {}
 
-usd = {'binance': 250, 'bitmart': 250}
-crypto = {'binance': 250, 'bitmart': 250}
-order_size = 1
+usd = {}
+crypto = {}
+order_size = 0
+
+
+async def get_avg_price(exchanges, symbol):
+    all_tickers = []
+    for exchange in exchanges:
+        ticker = await exchange.fetch_ticker(symbol)
+        all_tickers.append(ticker['last'])
+    return utils.moy(all_tickers)
+
+async def initial_limit_orders(exchanges, symbol):
+    global usd, crypto, order_size
+
+    usd = {exchange:(funds/2)/len(exchanges) for exchange in exchanges_names}
+
+    try:
+        print(f"{Style.DIM}{utils.get_time()}{Style.RESET_ALL} Fetching the global average price for {symbol}...")
+        average_first_buy_price = await get_avg_price(exchanges, symbol)
+        total_crypto = (funds/2)/average_first_buy_price
+        print(f"{Style.DIM}{utils.get_time()}{Style.RESET_ALL} Average {symbol} price in {symbol.split('/')[1]}: {average_first_buy_price}")
+
+    except Exception as e:
+        print(f"{Style.DIM}{utils.get_time()}{Style.RESET_ALL} Error while fetching average prices. Error: {e}")
+        for exchange in exchanges:
+            await exchange.close()
+
+    crypto = {exchange:total_crypto/len(exchanges) for exchange in exchanges_names}
+
+    order_size = (total_crypto/len(exchanges))
+
+    for exchange in exchanges:
+        time.sleep(0.7)
+        print(f'{Style.DIM}{utils.get_time()}{Style.RESET_ALL} Buy limit order of {round(total_crypto/len(exchanges),3)} {symbol.split("/")[0]} at {average_first_buy_price} sent to {exchange.id}.')
+
+    orders_filled = []
+
+    for exchange in exchanges:
+        time.sleep(2.1)
+        print(f"{Style.DIM}{utils.get_time()}{Style.RESET_ALL} {exchange.id} order filled.")
+        orders_filled.append(exchange)
+    print('\n\n')
 
 async def symbol_loop(exchange, symbol):
     global opportunity, prec_seconds
@@ -111,16 +148,16 @@ async def symbol_loop(exchange, symbol):
             print(f"{Style.DIM}{utils.get_time()}{Style.RESET_ALL} Best opportunity: {color}{round(change_usd,4)} {symbol.split('/')[1]} {Style.RESET_ALL}(with fees)       buy: {min_ask_ex} at {min_ask_price}     sell: {max_bid_ex} at {max_bid_price}")
             actual_time=exchange.iso8601(exchange.milliseconds())
 
+            time.sleep(delay)
+
             # Limit bot to maximum one hour
             if actual_time[17:19] == "00" and actual_time[14:16] != prec_seconds:
                 prec_seconds = actual_time[11:13]
                 await exchange.close()
 
-
 async def exchange_loop(exchange, symbols):
     loops = [symbol_loop(exchange, symbol) for symbol in symbols]
     await asyncio.gather(*loops)
-    await exchange.close()
 
 async def clear_crypto():
   for exc in exchanges:
@@ -129,8 +166,9 @@ async def clear_crypto():
       usd[exc.id]+=((crypto[exc.id])*(1-fees[exc.id]['base'])*price)*(1-fees[exc.id]['quote'])
       crypto[exc.id]=0
 
-
 async def main():
+    for symbol in symbols:
+        await initial_limit_orders(exchanges, symbol)
     loops = [exchange_loop(exchange, symbols) for exchange in exchanges]
     await asyncio.gather(*loops)
     await clear_crypto()
